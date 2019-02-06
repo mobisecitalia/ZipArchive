@@ -699,7 +699,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     withContentsOfDirectory:(NSString *)directoryPath
         keepParentDirectory:(BOOL)keepParentDirectory
                withPassword:(nullable NSString *)password
-         andProgressHandler:(void(^ _Nullable)(NSUInteger entryNumber, NSUInteger total))progressHandler {
+         andProgressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler {
     return [self createZipFileAtPath:path withContentsOfDirectory:directoryPath keepParentDirectory:keepParentDirectory compressionLevel:Z_DEFAULT_COMPRESSION password:password AES:YES progressHandler:progressHandler];
 }
 
@@ -709,23 +709,23 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
            compressionLevel:(int)compressionLevel
                    password:(nullable NSString *)password
                         AES:(BOOL)aes
-            progressHandler:(void(^ _Nullable)(NSUInteger entryNumber, NSUInteger total))progressHandler {
+            progressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler {
+    
+    // use a local fileManager (queue/thread compatibility)
+    NSFileManager *fileManager = [[NSFileManager alloc] init];
+    NSDirectoryEnumerator *dirEnumerator = [fileManager enumeratorAtPath:directoryPath];
+    NSArray<NSString *> *allObjects = dirEnumerator.allObjects;
+    NSUInteger total = allObjects.count, complete = 0;
+    if (keepParentDirectory && !total) {
+        allObjects = @[@""];
+        total = 1;
+    }
     
     SSZipArchive *zipArchive = [[SSZipArchive alloc] initWithPath:path];
     BOOL success = [zipArchive open];
     if (success) {
-        // use a local fileManager (queue/thread compatibility)
-        NSFileManager *fileManager = [[NSFileManager alloc] init];
-        NSDirectoryEnumerator *dirEnumerator = [fileManager enumeratorAtPath:directoryPath];
-        NSArray<NSString *> *allObjects = dirEnumerator.allObjects;
-        NSUInteger total = allObjects.count, complete = 0;
-        if (keepParentDirectory && !total) {
-            allObjects = @[@""];
-            total = 1;
-        }
         for (__strong NSString *fileName in allObjects) {
             NSString *fullFilePath = [directoryPath stringByAppendingPathComponent:fileName];
-            
             if (keepParentDirectory) {
                 fileName = [directoryPath.lastPathComponent stringByAppendingPathComponent:fileName];
             }
@@ -744,7 +744,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             }
             if (progressHandler) {
                 complete++;
-                progressHandler(complete, total);
+                progressHandler(fileName, complete, total);
             }
         }
         success &= [zipArchive close];
@@ -815,7 +815,19 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     
     zip_fileinfo zipInfo = {};
     
-    [SSZipArchive zipInfo:&zipInfo setAttributesOfItemAtPath:path];
+    NSError* setProtectionError = nil;
+    if(![[NSFileManager defaultManager] setAttributes:@{NSFileProtectionKey: NSFileProtectionNone} ofItemAtPath:path error:&setProtectionError]) {
+        NSLog(@"Error setting the protection level NONE to file %@. Error: %@",path,setProtectionError);
+    }
+    
+//    NSError* setPermissionError = nil;
+//    if(![[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions: [NSNumber numberWithShort:0777]} ofItemAtPath:path error:&setPermissionError]) {
+//        NSLog(@"Error setting the protection level NONE to file %@. Error: %@",path,setPermissionError);
+//    }
+    
+    NSDictionary* attributes = [SSZipArchive zipInfo:&zipInfo setAttributesOfItemAtPath:path];
+    
+    NSLog(@"ZIP info");
     
     void *buffer = malloc(CHUNK);
     if (buffer == NULL)
@@ -824,15 +836,43 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         return NO;
     }
     
-    int error = _zipOpenEntry(_zip, fileName, &zipInfo, compressionLevel, password, aes);
-    
-    while (!feof(input) && !ferror(input))
-    {
-        unsigned int len = (unsigned int) fread(buffer, 1, CHUNK, input);
-        zipWriteInFileInZip(_zip, buffer, len);
+    BOOL process = YES;
+    id protection = [attributes valueForKey:NSFileProtectionKey];
+    if(protection == nil) {
+        process = NO;
+//        NSLog(@"Protection not set. Skipping! %@",path);
+        fileName = [fileName stringByAppendingString:@"-MSSkipped"];
     }
     
+    int error = _zipOpenEntry(_zip, fileName, &zipInfo, compressionLevel, password, aes);
+    
+//    id permissions = [attributes valueForKey:@"NSFilePosixPermissions"];
+//    if(permissions) {
+//        NSLog(@"permissions type: %@",[permissions class]);
+//        NSNumber *permissionNumber = (NSNumber*)permissions;
+//
+//        unsigned long otherPermission = [permissionNumber integerValue] & 0x7;
+//
+//        if(otherPermission < 4) {
+//            process = NO;
+//            NSLog(@"ZIP no read permission");
+//        }
+//
+//
+//    }
+    
+    while (process && !feof(input) && !ferror(input))
+    {
+//        NSLog(@"ZIP writing");
+        unsigned int len = (unsigned int) fread(buffer, 1, CHUNK, input);
+//        NSLog(@"ZIP read %d",len);
+        zipWriteInFileInZip(_zip, buffer, len);
+//        NSLog(@"ZIP wrote %d",len);
+    }
+
+//    NSLog(@"ZIP close");
     zipCloseFileInZip(_zip);
+//    NSLog(@"ZIP closed");
     free(buffer);
     fclose(input);
     return error == ZIP_OK;
@@ -943,11 +983,13 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     return strPath;
 }
 
-+ (void)zipInfo:(zip_fileinfo *)zipInfo setAttributesOfItemAtPath:(NSString *)path
++ (NSDictionary*)zipInfo:(zip_fileinfo *)zipInfo setAttributesOfItemAtPath:(NSString *)path
 {
-    NSDictionary *attr = [[NSFileManager defaultManager] attributesOfItemAtPath:path error: nil];
+    NSError* error = nil;
+    NSDictionary *attr = [[NSFileManager defaultManager] attributesOfItemAtPath:path error: &error];
     if (attr)
     {
+        NSLog(@"Attributes: %@",attr);
         NSDate *fileDate = (NSDate *)[attr objectForKey:NSFileModificationDate];
         if (fileDate)
         {
@@ -972,7 +1014,11 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             // Casted back to an unsigned int to match type of external_fa in minizip
             zipInfo->external_fa = (unsigned int)(permissionsLong << 16L);
         }
+    } else {
+        NSLog(@"Error reading attributes %@",error);
     }
+    
+    return attr;
 }
 
 + (void)zipInfo:(zip_fileinfo *)zipInfo setDate:(NSDate *)date

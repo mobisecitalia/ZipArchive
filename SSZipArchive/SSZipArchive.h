@@ -98,14 +98,14 @@ typedef NS_ENUM(NSInteger, SSZipArchiveErrorCode) {
     withContentsOfDirectory:(NSString *)directoryPath
         keepParentDirectory:(BOOL)keepParentDirectory
                withPassword:(nullable NSString *)password
-         andProgressHandler:(void(^ _Nullable)(NSUInteger entryNumber, NSUInteger total))progressHandler;
+         andProgressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler;
 + (BOOL)createZipFileAtPath:(NSString *)path
     withContentsOfDirectory:(NSString *)directoryPath
         keepParentDirectory:(BOOL)keepParentDirectory
            compressionLevel:(int)compressionLevel
                    password:(nullable NSString *)password
                         AES:(BOOL)aes
-            progressHandler:(void(^ _Nullable)(NSUInteger entryNumber, NSUInteger total))progressHandler;
+            progressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler;
 
 - (instancetype)init NS_UNAVAILABLE;
 - (instancetype)initWithPath:(NSString *)path NS_DESIGNATED_INITIALIZER;
