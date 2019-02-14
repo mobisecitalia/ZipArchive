@@ -817,7 +817,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     
     NSError* setProtectionError = nil;
     if(![[NSFileManager defaultManager] setAttributes:@{NSFileProtectionKey: NSFileProtectionNone} ofItemAtPath:path error:&setProtectionError]) {
-        NSLog(@"Error setting the protection level NONE to file %@. Error: %@",path,setProtectionError);
+//        NSLog(@"Error setting the protection level NONE to file %@. Error: %@",path,setProtectionError);
     }
     
 //    NSError* setPermissionError = nil;
@@ -826,8 +826,6 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
 //    }
     
     NSDictionary* attributes = [SSZipArchive zipInfo:&zipInfo setAttributesOfItemAtPath:path];
-    
-    NSLog(@"ZIP info");
     
     void *buffer = malloc(CHUNK);
     if (buffer == NULL)
@@ -989,7 +987,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     NSDictionary *attr = [[NSFileManager defaultManager] attributesOfItemAtPath:path error: &error];
     if (attr)
     {
-        NSLog(@"Attributes: %@",attr);
+//        NSLog(@"Attributes: %@",attr);
         NSDate *fileDate = (NSDate *)[attr objectForKey:NSFileModificationDate];
         if (fileDate)
         {
@@ -1015,7 +1013,7 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
             zipInfo->external_fa = (unsigned int)(permissionsLong << 16L);
         }
     } else {
-        NSLog(@"Error reading attributes %@",error);
+//        NSLog(@"Error reading attributes %@",error);
     }
     
     return attr;
