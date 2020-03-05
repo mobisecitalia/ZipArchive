@@ -656,20 +656,38 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
 }
 
 #pragma mark - Zipping
-+ (BOOL)createZipFileAtPath:(NSString *)path withFilesAtPaths:(NSArray<NSString *> *)paths
-{
++ (BOOL)createZipFileAtPath:(NSString *)path
+           withFilesAtPaths:(NSArray<NSString *> *)paths {
     return [SSZipArchive createZipFileAtPath:path withFilesAtPaths:paths withPassword:nil];
 }
-+ (BOOL)createZipFileAtPath:(NSString *)path withContentsOfDirectory:(NSString *)directoryPath {
-    return [SSZipArchive createZipFileAtPath:path withContentsOfDirectory:directoryPath withPassword:nil];
+
++ (BOOL)createZipFileAtPath:(NSString *)path
+    withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
+                      error:(NSError**) error {
+    return [SSZipArchive createZipFileAtPath:path
+                     withContentsOfDirectory:directoryPath
+                                excludeList:excludeList
+                                withPassword:nil
+                                       error:error];
 }
 
-+ (BOOL)createZipFileAtPath:(NSString *)path withContentsOfDirectory:(NSString *)directoryPath keepParentDirectory:(BOOL)keepParentDirectory {
-    return [SSZipArchive createZipFileAtPath:path withContentsOfDirectory:directoryPath keepParentDirectory:keepParentDirectory withPassword:nil];
++ (BOOL)createZipFileAtPath:(NSString *)path
+    withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
+        keepParentDirectory:(BOOL)keepParentDirectory
+                      error:(NSError**) error {
+    return [SSZipArchive createZipFileAtPath:path
+                     withContentsOfDirectory:directoryPath
+                                 excludeList:excludeList
+                         keepParentDirectory:keepParentDirectory
+                                withPassword:nil
+                                       error:error];
 }
 
-+ (BOOL)createZipFileAtPath:(NSString *)path withFilesAtPaths:(NSArray<NSString *> *)paths withPassword:(NSString *)password
-{
++ (BOOL)createZipFileAtPath:(NSString *)path
+           withFilesAtPaths:(NSArray<NSString *> *)paths
+               withPassword:(NSString *)password {
     SSZipArchive *zipArchive = [[SSZipArchive alloc] initWithPath:path];
     BOOL success = [zipArchive open];
     if (success) {
@@ -681,35 +699,62 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
     return success;
 }
 
-+ (BOOL)createZipFileAtPath:(NSString *)path withContentsOfDirectory:(NSString *)directoryPath withPassword:(nullable NSString *)password {
-    return [SSZipArchive createZipFileAtPath:path withContentsOfDirectory:directoryPath keepParentDirectory:NO withPassword:password];
++ (BOOL)createZipFileAtPath:(NSString *)path
+    withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
+               withPassword:(nullable NSString *)password
+                      error:(NSError**) error {
+    return [SSZipArchive createZipFileAtPath:path
+                     withContentsOfDirectory:directoryPath
+                         excludeList:excludeList
+                         keepParentDirectory:NO
+                                withPassword:password
+                                       error:error];
 }
 
 
-+ (BOOL)createZipFileAtPath:(NSString *)path withContentsOfDirectory:(NSString *)directoryPath keepParentDirectory:(BOOL)keepParentDirectory withPassword:(nullable NSString *)password {
++ (BOOL)createZipFileAtPath:(NSString *)path
+    withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
+        keepParentDirectory:(BOOL)keepParentDirectory withPassword:(nullable NSString *)password
+                      error:(NSError**) error {
     return [SSZipArchive createZipFileAtPath:path
                      withContentsOfDirectory:directoryPath
+                                 excludeList:excludeList
                          keepParentDirectory:keepParentDirectory
                                 withPassword:password
                           andProgressHandler:nil
+                                       error:error
             ];
 }
 
 + (BOOL)createZipFileAtPath:(NSString *)path
     withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
         keepParentDirectory:(BOOL)keepParentDirectory
                withPassword:(nullable NSString *)password
-         andProgressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler {
-    return [self createZipFileAtPath:path withContentsOfDirectory:directoryPath keepParentDirectory:keepParentDirectory compressionLevel:Z_DEFAULT_COMPRESSION password:password AES:YES progressHandler:progressHandler];
+         andProgressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler
+                       error:(NSError**) error {
+    return [self createZipFileAtPath:path
+             withContentsOfDirectory:directoryPath
+                         excludeList:excludeList
+                 keepParentDirectory:keepParentDirectory
+                    compressionLevel:Z_DEFAULT_COMPRESSION
+                            password:password
+                                 AES:YES
+                     progressHandler:progressHandler
+                               error:error];
 }
 
 + (BOOL)createZipFileAtPath:(NSString *)path
     withContentsOfDirectory:(NSString *)directoryPath
+                excludeList:(NSArray<NSString*>*) excludeList
         keepParentDirectory:(BOOL)keepParentDirectory
            compressionLevel:(int)compressionLevel
                    password:(nullable NSString *)password
                         AES:(BOOL)aes
-            progressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler {
+            progressHandler:(void(^ _Nullable)(NSString* entry, NSUInteger entryNumber, NSUInteger total))progressHandler
+                      error:(NSError**) error {
     
     // use a local fileManager (queue/thread compatibility)
     NSFileManager *fileManager = [[NSFileManager alloc] init];
@@ -721,10 +766,25 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         total = 1;
     }
     
+    NSError* internalError = nil;
+    
     SSZipArchive *zipArchive = [[SSZipArchive alloc] initWithPath:path];
     BOOL success = [zipArchive open];
     if (success) {
         for (__strong NSString *fileName in allObjects) {
+            
+            BOOL excluded = false;
+            for (NSString* exclude in excludeList) {
+                if([fileName containsString:exclude]) {
+                    excluded = true;
+                    continue;
+                }
+            }
+            
+            if (excluded) {
+                continue;
+            }
+            
             NSString *fullFilePath = [directoryPath stringByAppendingPathComponent:fileName];
             if (keepParentDirectory) {
                 fileName = [directoryPath.lastPathComponent stringByAppendingPathComponent:fileName];
@@ -742,6 +802,13 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
                     success &= [zipArchive writeFolderAtPath:fullFilePath withFolderName:fileName withPassword:password];
                 }
             }
+            
+            if(!success) {
+                NSDictionary *errorInfo = @{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"Error zipping file at path: %@",fullFilePath]};
+                internalError = [NSError errorWithDomain:SSZipArchiveErrorDomain code:1 userInfo:errorInfo];
+                break;
+            }
+            
             if (progressHandler) {
                 complete++;
                 progressHandler(fileName, complete, total);
@@ -749,6 +816,11 @@ BOOL _fileIsSymbolicLink(const unz_file_info *fileInfo);
         }
         success &= [zipArchive close];
     }
+    
+    if(*error) {
+        *error = internalError;
+    }
+    
     return success;
 }
 
